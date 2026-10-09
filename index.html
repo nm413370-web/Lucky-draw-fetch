@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lucky Draw Offers</title>
+<style>
+:root{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#262238;background:#faf7ff}
+*{box-sizing:border-box}body{margin:0;padding:24px 14px 40px;background:linear-gradient(145deg,#fff8f0,#f4edff);min-height:100vh}
+main{max-width:760px;margin:auto}.hero{text-align:center;padding:20px 10px 14px}
+h1{font-size:clamp(2rem,7vw,3.1rem);margin:0;color:#55258b}.sub{color:#6d6478;margin:10px 0 0}
+.panel{background:#fff;border:1px solid #ece3f6;border-radius:20px;padding:20px;box-shadow:0 12px 35px #4b247410;margin:14px 0}
+.draw-button{width:100%;border:0;border-radius:15px;padding:17px;background:#6d35a5;color:white;font-size:1.15rem;font-weight:750;cursor:pointer}
+.draw-button:disabled{opacity:.55;cursor:not-allowed}.result{min-height:78px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:1.35rem;font-weight:800;color:#55258b;padding:12px}
+.stats{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;color:#61566e;font-size:.95rem}
+.progress{height:9px;border-radius:20px;background:#eee8f5;overflow:hidden;margin:12px 0 16px}.bar{height:100%;background:#9c65d0;width:0;transition:width .2s}
+.prizes{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}
+.prize{border:1px solid #eee5f5;border-radius:13px;padding:13px}.prize-head{font-weight:750}.counts{font-size:.9rem;color:#70677b;margin-top:5px}.pill{float:right;background:#f2eafa;color:#65359a;padding:3px 8px;border-radius:20px;font-size:.78rem}
+.admin{border-top:1px solid #eee5f5;margin-top:18px;padding-top:16px}.admin summary{cursor:pointer;color:#70677b;font-weight:650}.admin-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.admin input{min-width:0;flex:1;padding:11px;border:1px solid #d9cce7;border-radius:10px;font-size:1rem}.reset{padding:11px 15px;border:0;border-radius:10px;background:#a33b50;color:white;font-weight:700;cursor:pointer}.note{font-size:.84rem;color:#80768b;line-height:1.5;margin:12px 0 0}.message{min-height:22px;font-size:.9rem;color:#8d3043;margin-top:8px}
+</style>
+</head>
+<body>
+<main>
+  <header class="hero">
+    <h1>🎁 Lucky Draw</h1>
+    <p class="sub">Tap below to reveal your offer. Every prize has a limited quantity.</p>
+  </header>
+  <section class="panel">
+    <button id="drawBtn" class="draw-button" onclick="drawPrize()">Try Your Luck ✨</button>
+    <div id="result" class="result" aria-live="polite">Your offer will appear here</div>
+    <div class="stats"><span id="used">0 offers claimed</span><span id="remaining">86 offers remaining</span></div>
+    <div class="progress"><div class="bar" id="bar"></div></div>
+    <div class="prizes" id="prizes"></div>
+    <details class="admin">
+      <summary>Admin: reset all offers</summary>
+      <div class="admin-row">
+        <input id="pin" type="password" inputmode="numeric" placeholder="Admin PIN" aria-label="Admin PIN">
+        <button class="reset" onclick="resetDraw()">Reset all</button>
+      </div>
+      <div class="message" id="message"></div>
+      <p class="note">Reset returns every prize count to zero. Change the default admin PIN before publishing by setting the ADMIN_PIN environment variable to your own value.</p>
+    </details>
+  </section>
+</main>
+<script>
+async function refresh(data) {
+  if (!data) {
+    const response = await fetch('/api/status');
+    data = await response.json();
+  }
+  document.getElementById('used').textContent = `${data.total_used} offers claimed`;
+  document.getElementById('remaining').textContent = `${data.total_limit-data.total_used} offers remaining`;
+  document.getElementById('bar').style.width = `${data.total_used/data.total_limit*100}%`;
+  document.getElementById('prizes').innerHTML = data.prizes.map(p => `
+    <div class="prize">
+      <span class="pill">${p.remaining > 0 ? `${p.remaining} left` : 'Sold out'}</span>
+      <div class="prize-head">${p.label}</div>
+      <div class="counts">${p.used} claimed / ${p.limit} total</div>
+    </div>`).join('');
+  document.getElementById('drawBtn').disabled = data.total_used >= data.total_limit;
+}
+async function drawPrize() {
+  const btn = document.getElementById('drawBtn');
+  const result = document.getElementById('result');
+  btn.disabled = true; result.textContent = 'Picking your offer…';
+  try {
+    const response = await fetch('/api/draw', {method:'POST'});
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Could not draw an offer.');
+    result.textContent = `🎉 You won: ${data.prize}!`;
+    await refresh(data);
+  } catch (e) {
+    result.textContent = e.message;
+    await refresh();
+  }
+}
+async function resetDraw() {
+  const pin = document.getElementById('pin').value;
+  if (!confirm('Reset every offer count to zero? This cannot be undone.')) return;
+  const message = document.getElementById('message');
+  message.textContent = '';
+  try {
+    const response = await fetch('/api/reset', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin})});
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Reset failed.');
+    message.textContent = data.message;
+    document.getElementById('result').textContent = 'All offers are ready again!';
+    document.getElementById('pin').value = '';
+    await refresh();
+  } catch (e) { message.textContent = e.message; }
+}
+refresh();
+</script>
+</body>
+</html>
